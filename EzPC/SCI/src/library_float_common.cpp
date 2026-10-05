@@ -3726,3 +3726,14 @@ void SignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr){
 		outArr[i].s[0] = inArr[i].s[0] ;
 	}
 }
+
+// addScalar
+void AddScalar(int32_t s1, float c, vector<FPArray> &inArr, vector<FPArray> &outArr){
+	int m_bits = inArr[0].m_bits;
+	int e_bits = inArr[0].e_bits;
+	vector<FPArray> cArr = make_vector_float(ALICE, s1);
+	for (int i = 0; i < s1; i++){
+		cArr[i] = __fp_op->input<float>(ALICE, 1, c, m_bits, e_bits);
+	}
+	ElemWiseAdd(s1, inArr, cArr, outArr);
+}

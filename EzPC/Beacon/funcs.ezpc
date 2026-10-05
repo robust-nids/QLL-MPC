@@ -33,6 +33,11 @@ extern void computeQLLLoss(int32_pl s1, int32_pl s2, int32_pl s3, float_pl p, fl
 extern void AbsQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 extern void SignQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
 extern void OnesLikeQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+(* Functions needed for trch autograd -> ezpc translation*)
+extern void ADualQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void DualQLL(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void Exp(int32_pl s1, float_fl[s1] inArr, float_fl[s1] outArr) ;
+extern void AddScalarQLL(int32_pl s1, float_pl c, float_fl[s1] inArr, float_fl[s1] outArr) ;
 
 extern void getBiasDer(int32_pl s1, int32_pl s2, float_fl[s1][s2] der, float_fl[s2] biasDer) ;
 

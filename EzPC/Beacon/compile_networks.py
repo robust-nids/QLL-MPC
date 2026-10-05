@@ -130,6 +130,18 @@ class ToyNetwork(nn.Module):
     def forward(self, x):
         return self.fc1(x)
 
+class DiceFFNN(nn.Module):
+    def __init__(self):
+        super(MNISTFFNN, self).__init__()
+        self.fc1 = nn.Linear(784, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 6)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
+
 
 ## Dumping weights and input
 

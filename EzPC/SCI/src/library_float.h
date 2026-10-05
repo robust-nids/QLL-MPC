@@ -242,6 +242,9 @@ void OnesLikeQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
 // sign(a), a's share of the sign bit
 void SignQLL(int32_t s1, vector<FPArray> &inArr, vector<FPArray> &outArr);
 
+// addScalar 
+void AddScalar(int32_t s1, float c, vector<FPArray> &inArr, vector<FPArray> &outArr);
+
 void MatMul(int32_t m, int32_t n, int32_t p,
 			vector<vector<FPArray>> &A,
 			vector<vector<FPArray>> &B,
