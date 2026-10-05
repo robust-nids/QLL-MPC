@@ -3017,7 +3017,18 @@ void computeQLLLoss(int32_t s1, int32_t s2, int32_t s3, float p, vector<vector<F
 	scalarMultiplication(1, 1.0f/s1, sum, loss);
 }
 
-// a^p = exp(p*ln(a))
+/*
+a^p handled by:
+	p = 0: return 1
+	p = 0.5: return sqrt(a)
+	p < 16: return p muls, i.e. a*a*a*...
+	p < 0: return 1/a^p
+	p > 16: return exp(p*ln(a))
+note:
+	handled p < 16 and p > 16 differently due to number of OTs needed
+	tentative plan while I compute error propagation
+*/
+
 void Pow_thread(
 	int tid, int sz, int m_bits, int e_bits,
 	uint8_t *in_s, uint8_t *in_z, uint64_t *in_m, uint64_t *in_e,   
@@ -3025,8 +3036,27 @@ void Pow_thread(
 	) {
 	
 	FPArray in_flat = fpopArr[tid]->input(WHICHPARTY, sz, in_s, in_z, in_m, in_e, m_bits, e_bits) ;
-	FPArray p_flat = fpopArr[tid]->input<float>(PUBLIC, sz, p, m_bits, e_bits);
-	FPArray out_flat = fpmathArr[tid]->exp(fpopArr[tid]->mul(fpmathArr[tid]->ln(in_flat), p_flat)) ;
+	FPArray out_flat ;
+	float abs_p = fabsf(p) ;
+
+	if (abs_p == 0.0f){ // a^0 -> share 1's
+		out_flat = fpopArr[tid]->input<float>(ALICE, sz, 1.0f, m_bits, e_bits);
+	} else if (abs_p == 0.5f || (abs_p == floorf(abs_p) && abs_p <= 16.0f)){
+		if (abs_p == 0.5f){ // return sqrt
+			out_flat = fpopArr[tid]->sqrt(in_flat) ;
+		} else { // return p muls
+			out_flat = in_flat;
+			for (int i = 1; i < abs_p; i++){
+				out_flat = fpopArr[tid]->mul(out_flat, in_flat) ;
+			}
+		}
+		if (p < 0.0f){ // return 1/result if p < 0
+			out_flat = fpopArr[tid]->dual_qll(out_flat) ;
+		}
+	} else { // exp(p*ln(a))
+		FPArray p_flat = fpopArr[tid]->input<float>(PUBLIC, sz, p, m_bits, e_bits) ;
+		out_flat = fpmathArr[tid]->exp(fpopArr[tid]->mul(fpmathArr[tid]->ln(in_flat), p_flat)) ;
+	}
 	
 	memcpy(out_s, out_flat.s, sz*sizeof(uint8_t)) ;
 	memcpy(out_z, out_flat.z, sz*sizeof(uint8_t)) ;

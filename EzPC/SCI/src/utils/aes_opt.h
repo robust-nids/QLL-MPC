@@ -743,7 +743,7 @@ static inline void AES_ks8_index(block128 random, uint64_t idx,
 }
 
 /*
- * AES encryptin with
+ * AES encryption with
  * 2 keys 2 ciphers
  * 2 keys 4 ciphers
  * 4 keys 8 ciphers
