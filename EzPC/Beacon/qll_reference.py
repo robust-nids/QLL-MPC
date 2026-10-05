@@ -4,6 +4,7 @@
 # batch, iterations, learning rate, qll-p 
 #%%
 import argparse
+import inspect
 import math
 import sys
 
@@ -38,11 +39,20 @@ def to_add(a): return -torch.log(a)
 
 def to_mul(a): return torch.exp(-a)
 
-DOMAINS = {"add": Add, "mul": Mul}
+def loss(p, y0, x0, x1, label0):
+    """Training loss for ONE sample, the only place the loss is stated.
+    Parameter names say where each value comes from (as in beacon_frontend.py):
+        yJ = network output J, xJ = network input J, labelJ = label J
+    ToyNetwork: L = (y0 - label0)^2 + (|y0 - x0| \\/ |y0 - x1|)"""
+    q = Mul(p)
+    data = y0 - label0
+    return data * data + q.disj((y0 - x0).abs(), (y0 - x1).abs())
 
-def atoms(x, y):
-    y = y.squeeze(1)
-    return y - x[:, 0], y - x[:, 1]
+def loss_args(y, x, label):
+    """The batch column for each loss() parameter: y0 -> y[:, 0], x1 -> x[:, 1], label0 -> label[:, 0]"""
+    arrays = {"y": y, "x": x, "label": label}
+    names = list(inspect.signature(loss).parameters)[1:]
+    return [arrays[n.rstrip("0123456789")][:, int(n[len(n.rstrip("0123456789")):])] for n in names]
 
 def load_inp(path, dtype):
     with open(path) as f:
@@ -55,27 +65,23 @@ def main(argv=None):
     ap.add_argument("iters", type=int)
     ap.add_argument("lr", type=float)
     ap.add_argument("qll_p", type=float, nargs="?", default=2.0)
-    ap.add_argument("--domain", choices=DOMAINS, default="mul")
     ap.add_argument("--dtype", choices=["float64", "float32"], default="float32")
     args = ap.parse_args(argv)
 
-    q = DOMAINS[args.domain](args.qll_p)
     dtype = getattr(torch, args.dtype)
     net = ToyNetwork().to(dtype)
     torch.nn.utils.vector_to_parameters(load_inp(f"{args.network}_weights.inp", dtype), net.parameters())
     X = load_inp(f"{args.network}_input{args.batch}.inp", dtype).reshape(args.batch, -1)
     Y = load_inp(f"{args.network}_labels{args.batch}.inp", dtype).reshape(args.batch, -1)
 
-    print(f"== Loss per iteration (QLL, reference {args.domain} {args.dtype}, p={args.qll_p})")
+    print(f"== Loss per iteration (reference {args.dtype}, p={args.qll_p})")
     for i in range(args.iters):
         y = net(X)
-        a, b = atoms(X, y)
-        loss = q.disj((a),(b)).mean()
-        # loss = q.disj(a, b).mean()
-        print(f"   iteration {i+1}: {loss.item():.15g}")
+        L = loss(args.qll_p, *loss_args(y, X, Y)).mean()
+        print(f"   iteration {i+1}: {L.item():.15g}")
 
         net.zero_grad()
-        loss.backward()
+        L.backward()
         with torch.no_grad():
             for prm in net.parameters():
                 prm -= args.lr * prm.grad
@@ -90,11 +96,9 @@ if __name__ == "__main__":
 # %%
 
 # quick visualization 
-q = Mul(2.0)
-def toy_spec(y0, x0, x1):
-    return q.disj((y0 - x0).abs(), (y0 - x1).abs())
+toy_spec = lambda *args: loss(2.0, *args)
 
-example = [torch.rand(()) for _ in range(3)]
+example = [torch.rand(()) for _ in list(inspect.signature(loss).parameters)[1:]]
 loss_gm = make_fx(toy_spec)(*example)
 der_gm = make_fx(grad(toy_spec))(*example)
 
@@ -104,6 +108,6 @@ for n in loss_gm.graph.nodes:
 print("==== DERIVATIVE GRAPH MODULE ====") 
 # note: derivatives are not mpc friendly
 # write custom torch grad functions that are mpc friendly
-for n in loss_gm.graph.nodes:
+for n in der_gm.graph.nodes:
     print(n.op, n.name, n.target, n.args)
 # %%
