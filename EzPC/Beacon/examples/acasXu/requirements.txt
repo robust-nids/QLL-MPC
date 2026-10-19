@@ -1,0 +1,20 @@
+# Python 3.11: matplotlib 3.11 needs >= 3.11, and maraboupy 2.0.0 only has wheels up to 3.11.
+# Works on Linux x86_64 and macOS on Apple Silicon. Not on Intel Macs (no torch/onnx wheels),
+# Linux aarch64 (no vehicle-lang wheel) or plain Windows (use WSL).
+
+# Vehicle, and the Marabou executable that `vehicle verify --solver Marabou` looks for on PATH.
+# maraboupy provides that executable, but PyPI only has a maraboupy 2.0.0 wheel for x86_64 and
+# Python <= 3.11. Elsewhere (e.g. Apple Silicon) build Marabou 2.0.0 from source and put its build/
+# directory on PATH; pip would give Apple Silicon maraboupy 1.0.0, which runs with Vehicle but timed
+# out on queries 2.0.0 solves in seconds.
+vehicle-lang==0.28.0
+maraboupy==2.0.0; platform_machine == "x86_64" and python_version < "3.12"
+
+# finetune.py and visualize.py
+torch==2.13.0
+onnx==1.22.0
+onnxscript==0.7.1  # torch.onnx.export needs it
+matplotlib==3.11.1
+
+# verify.py
+tqdm==4.70.1
