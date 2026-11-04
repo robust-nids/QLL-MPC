@@ -1,0 +1,54 @@
+# Prerequisites
+*.d
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+*.out
+# Debugger config
+# *.json
+#precompiled headers
+*.gch
+# macroflags
+*macro_flags
+# log and csv files
+*.log
+*.log-config
+*.csv
+# MP-SPDZ directories
+Bytecodes
+Schedules
+#measurements
+measurements/logs/
+#executables
+executables/
+build/
+#for now
+CMake*
+#credentials
+machines.json
+
+# macOS build outputs
+executables-mac/
+# upstream's 3.9 MB run log
+/log.txt
+# editor / clangd: machine-specific absolute paths and index
+.cache/
+compile_commands.json
+# Rocq / Gappa build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+.lia.cache
+.nia.cache
+.nra.cache
+# Python
+__pycache__/
+*.pyc
+# macOS
+.DS_Store
+# ACAS Xu training data and outputs
+acasXu_run/

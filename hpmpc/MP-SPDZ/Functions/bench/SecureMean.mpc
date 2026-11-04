@@ -1,0 +1,23 @@
+from Compiler.types import sint, Array, MemValue
+from Compiler.library import print_ln, for_range
+
+program.bit_length = 32
+size = int(program.args[1])
+input_size=size
+datatype = sint
+
+inputs=Array(input_size,datatype)
+#Use the same loop to calculate the min, max and sum of the values
+sum_value=Array(1,sint)
+inputs.assign_all(1)
+total=input_size
+sum_value[0]=0
+
+@for_range_opt(input_size)
+def _(i):
+        sum_value[0]=(sum_value[0]+inputs[i])
+
+#Mean is calculated in clear since sum is revealed anyway
+mean_value = sum_value[0] * cfix(1/total)
+
+mean_value.reveal()

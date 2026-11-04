@@ -1,0 +1,11 @@
+models/
+deepreduce_models/
+bin_data/
+data/
+venv_clean/
+__pycache__/
+*.pth
+*.bin
+*.tar.gz
+*.pyc
+*.log
