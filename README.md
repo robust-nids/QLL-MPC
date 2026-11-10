@@ -7,6 +7,7 @@ The purpose of this repository is to collect all the tools, modifications, bench
 The aim of the experiment is to explore neuro-symbolic training with QLL properties in an MPC setting. The approach can be described as follows:
 
 Given a property `ϕ(θ)` that concerns an ML model fθ with trainable parameters `θ`, the goal is to define a loss function `L(ϕ, θ)` that can be optimised to find a `θ∗` satisfying `ϕ`. In principle, `ϕ` can be an arbitrary propositional formula built from logical connectives such as `and` (∧), `or` (∨) and `negation` (¬). QLL interprets such connectives as operations over suitable subsets of the reals, for example:
+
 ```
     ⟦ϕ ∨ ψ⟧_p = ⟦ϕ⟧_p ∪^p ⟦ψ⟧_p = −1/p log(e^(−pa) + e^(-pb))
     where ⟦_⟧_p is the denotation function under softness p
@@ -28,13 +29,16 @@ QLL is interpreted over the extended reals `ℝ̄ = ℝ ∪ {−∞, +∞}`, and
 ### Requirements
 
 - Docker. The image is `linux/amd64`: it runs natively on x86_64 and under emulation on Apple Silicon.
-- Python 3 with PyTorch, only for the cleartext reference.
+- Python 3.11 with the packages in [`ezpc/EzPC/Beacon/requirements.txt`](./ezpc/EzPC/Beacon/requirements.txt), only for the cleartext reference:
+  `python3.11 -m pip install -r ezpc/EzPC/Beacon/requirements.txt`
 
 ### Setup
 
-Run from the repository root:
+Run from `ezpc/`, which the container mounts as `/work`:
 
 ```bash
+cd ezpc
+
 # 1. Fetch the SCI build files and pinned dependencies
 bash docker/fetch_upstream.sh
 
@@ -44,21 +48,26 @@ docker build --platform linux/amd64 -t beacon-sci docker/
 # 3. Build the EzPC compiler and SCI inside the container
 docker run --rm --platform linux/amd64 -v "$PWD":/work beacon-sci bash docker/build.sh
 ```
-Re-run step 3 after changing files in `EzPC/SCI/src`.
+
+Re-run step 3 after changing files in `EzPC/SCI/src`, and after building `ezpc` on the host:
+host and container share the one `EzPC/EzPC/EzPC/ezpc` file, and its interpreter line is whichever build ran last.
 
 ### Training
+
+From `ezpc/`:
 
 ```
 docker run --rm --platform linux/amd64 -v "$PWD":/work -e NETWORK=ToyNetwork -e LOSS=TorchQLL -e QLL_P=2.0 -e BATCH=128 beacon-sci bash docker/train.sh
 ```
+
 This trains ToyNetwork with the `TorchQLL` loss and p = 2. Both parties (server and client) run in the container. The script prints the revealed loss for each iteration, followed by the time, communication (MiB) and rounds.
 
-| Variable | Values | Default |
-|---|---|---|
+| Variable                       | Values                                                                                    | Default        |
+| ------------------------------ | ----------------------------------------------------------------------------------------- | -------------- |
 | `NETWORK` | `ToyNetwork`, `Logistic`, `FFNN` (MNIST) | Logistic |
-| `LOSS` | `QLL` (hand-written C++ loss), `TorchQLL` (loss traced from PyTorch), `CE`, `MSE` | CE |
-| `QLL_P` | QLL softness p | 2.0 |
-| `BATCH` / `ITERS` / `LR` | batch size, iterations, learning rate | 128 / 5 / 0.01|
+| `LOSS`    | `CE`, `MSE`, and for `ToyNetwork` only: `QLL` (hand-written C++ loss), `TorchQLL` (loss traced from PyTorch) | CE |
+| `QLL_P`                      | QLL softness p                                                                            | 2.0            |
+| `BATCH` / `ITERS` / `LR` | batch size, iterations, learning rate                                                     | 128 / 5 / 0.01 |
 
 With `TorchQLL`, the property is the `loss()` function in [`beacon_frontend.py`](./EzPC/Beacon/beacon_frontend.py). It must match the chosen network's inputs and outputs.
 
@@ -79,4 +88,3 @@ python3 qll_reference.py ToyNetwork 128 5 0.01 2.0   # network, batch, iteration
 [[3]](https://www.informatik.tu-darmstadt.de/media/encrypto/encrypto_code/abydevguide.pdf) ABY Developer Guide
 
 [[4]](https://ieeexplore.ieee.org/document/8806756) N. Chandran, D. Gupta, A. Rastogi, R. Sharma and S. Tripathi, "EzPC: Programmable and Efficient Secure Two-Party Computation for Machine Learning," 2019 (EuroS&P)
-
