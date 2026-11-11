@@ -408,9 +408,15 @@ static void backward(const std::vector<Shares<Share>>& w, const Shares<Share>& X
     grads[13] = t6;
 }
 
+// SGD keeps no state
+template <typename Share>
+struct State
+{
+};
+
 // w[k] -= lr * grads[k], SGD with one truncation for all tensors
 template <typename Share>
-static void update(std::vector<Shares<Share>>& w, const std::vector<Shares<Share>>& grads, double lr)
+static void update(std::vector<Shares<Share>>& w, const std::vector<Shares<Share>>& grads, State<Share>& state, double lr)
 {
     sgd(w, grads, lr);
 }

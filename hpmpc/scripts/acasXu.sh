@@ -15,10 +15,16 @@ DATA_POINTS=${DATA_POINTS:-9984}
 PROPERTY_POINTS=${PROPERTY_POINTS:-43200}
 REPORT_EVERY=${REPORT_EVERY:-10}
 FRACTIONAL=${FRACTIONAL:-20}
+OPTIMIZER=${OPTIMIZER:-sgd}     # sgd or adam
+BETA1=${BETA1:-0.9}
+BETA2=${BETA2:-0.999}
+EPS=${EPS:-1e-4}                # at least 2^(-FRACTIONAL/2 - GRAD_SCALE)
+GRAD_SCALE=${GRAD_SCALE:-5}     # Adam runs on 2^GRAD_SCALE grads, which must stay below 1448 at 64/20
 export ACASXU_DIR=${ACASXU_DIR:-$PWD/examples/acasXu_run}
 
-python3 programs/torch/torch_to_hpmpc.py --batch "$BATCH_SIZE"
-
+python3 programs/torch/torch_to_hpmpc.py --batch "$BATCH_SIZE" --optimizer "$OPTIMIZER" --betas "$BETA1" "$BETA2" \
+    --eps "$EPS" --grad-scale "$GRAD_SCALE"
+    
 # ripple-carry comparisons (the 4-way adder gave wrong signs) and TRUNC_APPROACH=1 (fixed_point_training.hpp truncates GEMM's products)
 FLAGS="PROTOCOL=5 PRE=0 FUNCTION_IDENTIFIER=67 BITLENGTH=64 DATTYPE=64 FRACTIONAL=$FRACTIONAL TRUNC_APPROACH=1
        BANDWIDTH_OPTIMIZED=1 ONLINE_OPTIMIZED=0 BATCH_SIZE=$BATCH_SIZE ITERS=$ITERS LEARNING_RATE=$LEARNING_RATE

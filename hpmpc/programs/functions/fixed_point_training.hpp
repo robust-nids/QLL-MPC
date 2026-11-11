@@ -169,6 +169,16 @@ constexpr double LOG_POLY[] = {0.405465108108,
                                    -0.0144105528948,
                                    0.0102381797537,
                                    -0.00600660504495};
+// and 1 / sqrt(1.5 + s) for |s| <= 0.5 (error 6e-8)
+constexpr double RSQRT_POLY[] = {0.816496580928,
+                                     -0.272164841733,
+                                     0.136082328604,
+                                     -0.0756378043142,
+                                     0.0441239119805,
+                                     -0.0259489426435,
+                                     0.0158457249217,
+                                     -0.0126100713735,
+                                     0.0079053081087};
 
 // out = e^x: clamp x, then a polynomial for e^(x/16) and four squarings
 template <typename A>
@@ -193,10 +203,12 @@ static void exp(const A* x, A* out, int n)
 // For x > 0 in [2^NORM_MIN, 2^NORM_MAX), with k = floor(log2 x): m = x / 2^k in [1, 2], and as integer shares k
 // and v = 2^(NORM_MAX - k). Compares x with every power of two at once, all in the rounds of one comparison.
 template <typename A>
-static void normalize(const A* x, A* m, A* k, A* v, int n)
+static void normalize(const A* x, A* m, A* k, A* v, int n, std::vector<A>* bits = nullptr)
 {
     const int powers = NORM_MAX - NORM_MIN;  // 2^(NORM_MIN + 1), ..., 2^NORM_MAX
-    std::vector<A> t(n * powers), bit(n * powers);
+    std::vector<A> t(n * powers), own;
+    std::vector<A>& bit = bits ? *bits : own;
+    bit.resize(n * powers);
     for (int i = 0; i < n; i++)
         for (int j = 0; j < powers; j++)
             t[i * powers + j] = x[i] - A(UINT_TYPE(1) << (FRACTIONAL + NORM_MIN + 1 + j));
@@ -235,6 +247,38 @@ static void log(const A* x, A* out, int n)
     const UINT_TYPE ln2 = to_fx(LN2);
     for (int i = 0; i < n; i++)
         out[i] = out[i] + k[i].mult_public(ln2);
+}
+
+
+// out = sqrt(x) for x = 0 or x in [2^NORM_MIN, 2^NORM_MAX): with normalize's x = m 2^k, sqrt(m) = m / sqrt(m) by a
+// polynomial (0 at x = 0, where m = 0), times 2^(k/2), a public function of k and so a sum of public multiples of
+// normalize's 0/1 comparisons (local)
+template <typename A>
+static void sqrt(const A* x, A* out, int n)
+{
+    const int powers = NORM_MAX - NORM_MIN, h = 1;  // 2^(k/2 + h) with h bits more, so its rounding stays below 1 ulp
+    std::vector<A> m(n), k(n), v(n), bit, s(n), r(n), e(n);
+    normalize(x, m.data(), k.data(), v.data(), n, &bit);
+    const UINT_TYPE lowest = to_fx(std::pow(2.0, NORM_MIN / 2.0 + h));
+    std::vector<UINT_TYPE> step(powers);  // differences of the rounded 2^(k/2 + h), so their sums are exact
+    UINT_TYPE previous = lowest;
+    for (int j = 0; j < powers; j++)
+    {
+        const UINT_TYPE next = to_fx(std::pow(2.0, (NORM_MIN + 1 + j) / 2.0 + h));
+        step[j] = next - previous;
+        previous = next;
+    }
+    const A first(lowest), mid(to_fx(1.5));
+    for (int i = 0; i < n; i++)
+    {
+        e[i] = first;
+        for (int j = 0; j < powers; j++)
+            e[i] = e[i] + bit[i * powers + j].mult_public(step[j]);
+        s[i] = m[i] - mid;
+    }
+    poly(s.data(), RSQRT_POLY, r.data(), n);
+    mul(m.data(), r.data(), s.data(), n);
+    mul(s.data(), e.data(), out, n, FRACTIONAL + h);
 }
 
 // y = 1 / m by three Newton steps from the best linear guess on [1, 2] (first error 1/17, then 1/17^8), and v, for x > 0
@@ -308,6 +352,69 @@ static void sgd(std::vector<std::vector<A>>& w, const std::vector<std::vector<A>
     for (size_t k = 0; k < w.size(); k++)
         for (size_t i = 0; i < w[k].size(); i++)
             w[k][i] = w[k][i] - step[j++];
+}
+
+// Adam:
+template <typename A>
+static void adam(std::vector<std::vector<A>>& w, const std::vector<std::vector<A>>& g, std::vector<std::vector<A>>& m,
+                 std::vector<std::vector<A>>& v, int t, double lr, double b1, double b2, double eps, int scale)
+{
+    if (m.empty())
+        for (auto& x : w)
+        {
+            m.emplace_back(x.size(), A(UINT_TYPE(0)));
+            v.emplace_back(x.size(), A(UINT_TYPE(0)));
+        }
+    std::vector<A> G, MV;  // all tensors in one, m^ then v^, so every step below runs in the rounds of one
+    for (size_t k = 0; k < w.size(); k++)
+    {
+        G.insert(G.end(), g[k].begin(), g[k].end());
+        MV.insert(MV.end(), m[k].begin(), m[k].end());
+    }
+    for (size_t k = 0; k < w.size(); k++)
+        MV.insert(MV.end(), v[k].begin(), v[k].end());
+    const int n = G.size();
+    A *M = MV.data(), *V = MV.data() + n;
+    if (scale >= 0)
+        for (int i = 0; i < n; i++)
+            G[i] = G[i].mult_public(UINT_TYPE(1) << scale);
+    else
+        trunc(G.data(), n, -scale);
+
+    // m^ = a1 m^ + (1 - a1) g', v^ = a2 v^ + (1 - a2) g'^2, with 1 - a exact so v^ <= max g'^2
+    const UINT_TYPE one = UINT_TYPE(1) << FRACTIONAL;
+    const UINT_TYPE a1 = to_fx(b1 * (1 - std::pow(b1, t - 1)) / (1 - std::pow(b1, t)));
+    const UINT_TYPE a2 = to_fx(b2 * (1 - std::pow(b2, t - 1)) / (1 - std::pow(b2, t)));
+    std::vector<A> G2(n), D(n), U(n);
+    mul(G.data(), G.data(), G2.data(), n);
+    for (int i = 0; i < n; i++)
+    {
+        M[i] = M[i].mult_public(a1) + G[i].mult_public(one - a1);
+        V[i] = V[i].mult_public(a2) + G2[i].mult_public(one - a2);
+    }
+    trunc(MV.data(), 2 * n);
+
+    // u = m^ / (sqrt(v^) + eps 2^scale), a few at most in size
+    sqrt(V, D.data(), n);
+    const A e(to_fx(std::ldexp(eps, scale)));
+    for (int i = 0; i < n; i++)
+        D[i] = D[i] + e;
+    div(M, D.data(), U.data(), n);
+
+    // w -= lr u, with lr = c 2^p and c in [0.5, 1) so a small lr keeps all its digits
+    int p;
+    const UINT_TYPE c = to_fx(std::frexp(lr, &p));
+    for (int i = 0; i < n; i++)
+        U[i] = U[i].mult_public(c);
+    trunc(U.data(), n, FRACTIONAL - p);
+    int j = 0;
+    for (size_t k = 0; k < w.size(); k++)
+        for (size_t i = 0; i < w[k].size(); i++, j++)
+        {
+            w[k][i] = w[k][i] - U[j];
+            m[k][i] = M[j];
+            v[k][i] = V[j];
+        }
 }
 
 // out = x, revealed to every party

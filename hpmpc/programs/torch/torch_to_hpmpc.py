@@ -343,7 +343,7 @@ def hpmpc_function(comment, signature, emitter, tail):
     body = ["    using A = Additive_Share<DATATYPE, Share>;"] + ["    " + line for line in emitter.lines + tail]
     return "\n".join([comment, "template <typename Share>", f"static void {signature}", "{"] + body + ["}"]) + "\n"
 
-def generate(batch):
+def generate(batch, update):
     """The C++ of acasXu_generated.hpp"""
     model = AcasXu()
     names, w, network_gm, loss_gm = trace(model, batch)
@@ -389,11 +389,6 @@ def generate(batch):
         f"backward(const {WEIGHTS}& w, const {SHARES}& X, const Saved<Share>& saved, const {SHARES}& dY, "
         f"{WEIGHTS}& grads)", b, [f"grads[{k}] = {b.ref(g)};" for k, g in enumerate(grads)])
 
-    update = ("// w[k] -= lr * grads[k], SGD with one truncation for all tensors\n"
-              "template <typename Share>\n"
-              f"static void update({WEIGHTS}& w, const {WEIGHTS}& grads, double lr)\n"
-              "{\n    sgd(w, grads, lr);\n}\n")
-
     sizes = ", ".join(str(p.numel()) for p in w)
     layout = ", ".join(f"{name} {list(p.shape)}" for name, p in zip(names, w))
     struct = ("// what forward keeps for backward: ReLU outputs the weight gradients read, ReLU 0/1 shares for their backward\n"
@@ -411,12 +406,33 @@ def generate(batch):
             f"template <typename Share>\nusing Shares = std::vector<Additive_Share<DATATYPE, Share>>;\n\n"
             + struct + "\n" + forward + "\n" + loss_fn + "\n" + backward + "\n" + update)
 
+def optimizer(args):
+    """The optimizer's state and update, calling sgd or adam in functions/fixed_point_training.hpp"""
+    signature = f"static void update({WEIGHTS}& w, const {WEIGHTS}& grads, State<Share>& state, double lr)"
+    if args.optimizer == "sgd":
+        return ("// SGD keeps no state\ntemplate <typename Share>\nstruct State\n{\n};\n\n"
+                "// w[k] -= lr * grads[k], SGD with one truncation for all tensors\n"
+                f"template <typename Share>\n{signature}\n{{\n    sgd(w, grads, lr);\n}}\n")
+    (b1, b2), eps, scale = args.betas, args.eps, args.grad_scale
+    return ("// Adam's state: the bias-corrected moments of every tensor (empty before the first step) and the step count\n"
+            "template <typename Share>\nstruct State\n{\n    std::vector<Shares<Share>> m, v;\n    int t = 0;\n};\n\n"
+            f"// w[k] -= lr * m^[k] / (sqrt(v^[k]) + eps), Adam with betas ({b1!r}, {b2!r}) and eps {eps!r},\n"
+            f"// computed on 2^{scale} grads (and eps)\n"
+            f"template <typename Share>\n{signature}\n{{\n"
+            f"    adam(w, grads, state.m, state.v, ++state.t, lr, {b1!r}, {b2!r}, {eps!r}, {scale});\n}}\n")
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--batch", type=int, default=256, help="data points per step (as many property points again)")
+    parser.add_argument("--optimizer", choices=["sgd", "adam"], default="sgd")
+    parser.add_argument("--betas", type=float, nargs=2, default=[0.9, 0.999], help="Adam's b1 and b2")
+    parser.add_argument("--eps", type=float, default=1e-4,
+                        help="Adam's eps, at least 2^(-FRACTIONAL/2 - grad-scale) (torch's 1e-8 rounds to 0)")
+    parser.add_argument("--grad-scale", type=int, default=5,
+                        help="Adam runs on 2^grad-scale grads: |2^grad-scale g| must stay below 2^(NORM_MAX/2), 1448 at 64/20")
     parser.add_argument("--out", default=OUT)
     args = parser.parse_args()
-    code = generate(args.batch)
+    code = generate(args.batch, optimizer(args))
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as file:
         file.write(code)

@@ -181,6 +181,7 @@ void acasXu_training(DATATYPE* res)
     std::vector<int> order(batches);
     std::mt19937 rng(SHUFFLE_SEED);
     std::vector<std::vector<A>> grads(PARAMS);
+    State<Share> state;
     for (int it = 0; it < ITERS; it++)
     {
         if (it % batches == 0)
@@ -203,7 +204,7 @@ void acasXu_training(DATATYPE* res)
         forward<Share>(w, X, Y, saved);
         loss<Share>(Y, X, Tb, value, dY);
         backward<Share>(w, X, saved, dY, grads);
-        update<Share>(w, grads, LEARNING_RATE);
+        update<Share>(w, grads, state, LEARNING_RATE);
 
         if (REPORT_EVERY > 0 && (it + 1) % REPORT_EVERY == 0)
         {
