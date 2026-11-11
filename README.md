@@ -24,59 +24,44 @@ interesting to see which ones are the most suitable for our experiment.
 *Encoding the extended reals:*
 QLL is interpreted over the extended reals `ℝ̄ = ℝ ∪ {−∞, +∞}`, and the connectives produce the infinities as ordinary truth values. IEEE 754 represents them natively (`±Inf`, plus `NaN` for the indeterminate forms), but MPC backends share values over ring or fields and work in fixed-point, so floating point has to be emulated in circuits at a high cost. Finding an encoding of `ℝ̄` that is faithful enough to keep the loss adequate yet cheap enough to evaluate under MPC is an open point of this work.
 
-## Running the experiment
+### Running Experiments
+> Note: To run the ezpc training, please refer to this [readme](./ezpc/README.md).
 
-### Requirements
+#### Requirements
 
-- Docker. The image is `linux/amd64`: it runs natively on x86_64 and under emulation on Apple Silicon.
-- Python 3.11 with the packages in [`ezpc/EzPC/Beacon/requirements.txt`](./ezpc/EzPC/Beacon/requirements.txt), only for the cleartext reference:
-  `python3.11 -m pip install -r ezpc/EzPC/Beacon/requirements.txt`
+- macOS on Apple silicon, with `clang++` (C++20).
+- OpenSSL 3 from Homebrew: `brew install openssl@3` (set `OPENSSL=<path>` if it is not under `/opt/homebrew/opt/openssl@3`).
+- Python 3 with PyTorch: `pip install torch`.
 
-### Setup
-
-Run from `ezpc/`, which the container mounts as `/work`:
-
-```bash
-cd ezpc
-
-# 1. Fetch the SCI build files and pinned dependencies
-bash docker/fetch_upstream.sh
-
-# 2. Build the image
-docker build --platform linux/amd64 -t beacon-sci docker/
-
-# 3. Build the EzPC compiler and SCI inside the container
-docker run --rm --platform linux/amd64 -v "$PWD":/work beacon-sci bash docker/build.sh
-```
-
-Re-run step 3 after changing files in `EzPC/SCI/src`, and after building `ezpc` on the host:
-host and container share the one `EzPC/EzPC/EzPC/ezpc` file, and its interpreter line is whichever build ran last.
-
-### Training
-
-From `ezpc/`:
-
-```
-docker run --rm --platform linux/amd64 -v "$PWD":/work -e NETWORK=ToyNetwork -e LOSS=TorchQLL -e QLL_P=2.0 -e BATCH=128 beacon-sci bash docker/train.sh
-```
-
-This trains ToyNetwork with the `TorchQLL` loss and p = 2. Both parties (server and client) run in the container. The script prints the revealed loss for each iteration, followed by the time, communication (MiB) and rounds.
-
-| Variable                       | Values                                                                                    | Default        |
-| ------------------------------ | ----------------------------------------------------------------------------------------- | -------------- |
-| `NETWORK` | `ToyNetwork`, `Logistic`, `FFNN` (MNIST) | Logistic |
-| `LOSS`    | `CE`, `MSE`, and for `ToyNetwork` only: `QLL` (hand-written C++ loss), `TorchQLL` (loss traced from PyTorch) | CE |
-| `QLL_P`                      | QLL softness p                                                                            | 2.0            |
-| `BATCH` / `ITERS` / `LR` | batch size, iterations, learning rate                                                     | 128 / 5 / 0.01 |
-
-With `TorchQLL`, the property is the `loss()` function in [`beacon_frontend.py`](./EzPC/Beacon/beacon_frontend.py). It must match the chosen network's inputs and outputs.
-
-### Cleartext reference for ToyNetwork
-
-The same loss can be trained in plain PyTorch, on the same initial weights and data, to compare against the secure run. Run it from `EzPC/Beacon` after a training run, with the same loss, batch, iterations, lr and p.
+#### Training
 
 ```bash
-python3 qll_reference.py ToyNetwork 128 5 0.01 2.0   # network, batch, iterations, lr, qll_p
+cd hpmpc
+scripts/acasXu.sh mac
+```
+Running with env variables:
+
+```bash
+OPTIMIZER=adam ITERS=1170 REPORT_EVERY=39 scripts/acasXu.sh mac
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPTIMIZER` | `sgd` | `sgd` or `adam` |
+| `ITERS` | `100` | training steps |
+| `BATCH_SIZE` | `256` | data points per step (plus as many property points) |
+| `LEARNING_RATE` | `1e-4` | step size |
+| `REPORT_EVERY` | `10` | print the loss every this many steps |
+| `FRACTIONAL` | `20` | fixed-point fractional bits |
+| `BETA1`, `BETA2`, `EPS`, `GRAD_SCALE` | `0.9`, `0.999`, `1e-4`, `5` | Adam only |
+| `ACASXU_DIR` | `examples/acasXu_run` | run directory |
+
+P1 writes the fine-tuned weights to `finetuned.inp` in the run directory; per-party logs are in `executables-mac/`.
+
+Convert the fine-tuned weights back to ONNX, reusing the original network's graph:
+
+```bash
+python3 programs/torch/onnx_converter.py to_onnx examples/acasXu_run/finetuned.inp examples/acasXu_run/acasXu_2_9.onnx examples/acasXu_run/acasXu_2_9_1_mpc.onnx --meta lr=1e-4
 ```
 
 ## References
