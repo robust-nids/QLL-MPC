@@ -32,6 +32,7 @@ QLL is interpreted over the extended reals `ℝ̄ = ℝ ∪ {−∞, +∞}`, and
 - macOS on Apple silicon, with `clang++` (C++20).
 - OpenSSL 3 from Homebrew: `brew install openssl@3` (set `OPENSSL=<path>` if it is not under `/opt/homebrew/opt/openssl@3`).
 - Python 3 with PyTorch: `pip install torch`.
+- For verification: [Vehicle](https://github.com/vehicle-lang/vehicle) (`pip install vehicle-lang`) and a `Marabou` executable on `PATH`.
 
 #### Training
 
@@ -62,6 +63,17 @@ Convert the fine-tuned weights back to ONNX, reusing the original network's grap
 
 ```bash
 python3 programs/torch/onnx_converter.py to_onnx examples/acasXu_run/finetuned.inp examples/acasXu_run/acasXu_2_9.onnx examples/acasXu_run/acasXu_2_9_1_mpc.onnx --meta lr=1e-4
+```
+
+Verify the fine-tuned network against the property it was trained on (`property1` in `acasXu.vcl`: the COC advisory is never maximal when the intruder is distant and slower):
+
+```bash
+vehicle verify \
+    --specification examples/acasXu_run/acasXu.vcl \
+    --network acasXu:examples/acasXu_run/acasXu_2_9_1_mpc.onnx \
+    --property property1 \
+    --solver ~/TA/vehicle-tutorial/lab2-solution/.marabou-2/build/Marabou \
+    --solver-args "--timeout=30"
 ```
 
 ## References
